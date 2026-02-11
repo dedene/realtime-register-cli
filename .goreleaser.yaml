@@ -1,0 +1,57 @@
+version: 2
+
+project_name: rr
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/rr
+    binary: rr
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.version={{.Version}}
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.commit={{.ShortCommit}}
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.date={{.Date}}
+
+archives:
+  - format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+
+brews:
+  - repository:
+      owner: dedene
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/dedene/realtime-register-cli
+    description: RealtimeRegister CLI - Domain management from the command line
+    license: MIT
+    install: |
+      bin.install "rr"
+    test: |
+      system "#{bin}/rr", "version"
