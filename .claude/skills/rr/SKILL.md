@@ -161,3 +161,10 @@ rr domain delete example.com -y
 # Pagination
 rr domain list --limit 100 --offset 0 --json
 ```
+
+
+## Installation
+
+```bash
+brew install dedene/tap/rr
+```
