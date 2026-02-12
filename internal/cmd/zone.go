@@ -55,8 +55,9 @@ func (c *ZoneListCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"ID", "NAME", "RECORDS"}
-	var rows [][]string
-	for _, z := range resp.Entities {
+	rows := make([][]string, 0, len(resp.Entities))
+	for i := range resp.Entities {
+		z := &resp.Entities[i]
 		rows = append(rows, []string{
 			fmt.Sprintf("%d", z.ID),
 			z.Name,
@@ -141,7 +142,7 @@ func (c *ZoneCreateCmd) Run(flags *RootFlags) error {
 		TTL:  c.TTL,
 	}
 
-	id, err := client.CreateZone(ctx, req)
+	id, err := client.CreateZone(ctx, &req)
 	if err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
@@ -162,7 +163,7 @@ type ZoneUpdateCmd struct {
 	TTL int `help:"Default TTL"`
 }
 
-func (c *ZoneUpdateCmd) Run(flags *RootFlags) error {
+func (c *ZoneUpdateCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -175,7 +176,7 @@ func (c *ZoneUpdateCmd) Run(flags *RootFlags) error {
 		TTL: c.TTL,
 	}
 
-	if err := client.UpdateZone(ctx, c.ID, req); err != nil {
+	if err := client.UpdateZone(ctx, c.ID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
@@ -232,7 +233,7 @@ type ZoneRecordAddCmd struct {
 	Priority int    `help:"Priority (for MX/SRV)" default:"0"`
 }
 
-func (c *ZoneRecordAddCmd) Run(flags *RootFlags) error {
+func (c *ZoneRecordAddCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -257,7 +258,7 @@ func (c *ZoneRecordAddCmd) Run(flags *RootFlags) error {
 	zone.Records = append(zone.Records, newRecord)
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, req); err != nil {
+	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
@@ -276,7 +277,7 @@ type ZoneRecordUpdateCmd struct {
 	Priority   int    `help:"New priority (for MX/SRV)" default:"-1"`
 }
 
-func (c *ZoneRecordUpdateCmd) Run(flags *RootFlags) error {
+func (c *ZoneRecordUpdateCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -321,7 +322,7 @@ func (c *ZoneRecordUpdateCmd) Run(flags *RootFlags) error {
 	}
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, req); err != nil {
+	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
@@ -387,7 +388,7 @@ func (c *ZoneRecordDeleteCmd) Run(flags *RootFlags) error {
 	zone.Records = append(zone.Records[:idx], zone.Records[idx+1:]...)
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, req); err != nil {
+	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
@@ -453,7 +454,7 @@ func (c *ZoneSyncCmd) Run(flags *RootFlags) error {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	var newRecords []api.DNSRecord
+	newRecords := make([]api.DNSRecord, 0, len(syncFile.Records))
 	for _, r := range syncFile.Records {
 		ttl := r.TTL
 		if ttl == 0 {
@@ -482,7 +483,7 @@ func (c *ZoneSyncCmd) Run(flags *RootFlags) error {
 	}
 
 	req := api.ZoneRequest{Records: newRecords}
-	if err := client.UpdateZone(ctx, c.ZoneID, req); err != nil {
+	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 

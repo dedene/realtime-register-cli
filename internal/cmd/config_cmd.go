@@ -24,7 +24,7 @@ type ConfigGetCmd struct {
 	Key string `arg:"" help:"Config key"`
 }
 
-func (c *ConfigGetCmd) Run(flags *RootFlags) error {
+func (c *ConfigGetCmd) Run(_ *RootFlags) error {
 	cfg, err := config.ReadConfig()
 	if err != nil {
 		return &ExitError{Code: CodeError, Err: err}
@@ -56,7 +56,7 @@ type ConfigSetCmd struct {
 	Value string `arg:"" help:"Config value"`
 }
 
-func (c *ConfigSetCmd) Run(flags *RootFlags) error {
+func (c *ConfigSetCmd) Run(_ *RootFlags) error {
 	cfg, err := config.ReadConfig()
 	if err != nil {
 		return &ExitError{Code: CodeError, Err: err}
@@ -68,7 +68,7 @@ func (c *ConfigSetCmd) Run(flags *RootFlags) error {
 	case "default_tlds":
 		cfg.DefaultTLDs = strings.Split(c.Value, ",")
 	case "auto_renew":
-		v := strings.ToLower(c.Value) == "true" || c.Value == "1"
+		v := strings.EqualFold(c.Value, "true") || c.Value == "1"
 		cfg.AutoRenew = &v
 	case "keyring_backend":
 		cfg.KeyringBackend = c.Value
@@ -110,7 +110,7 @@ func (c *ConfigListCmd) Run(flags *RootFlags) error {
 // ConfigPathCmd shows config file path.
 type ConfigPathCmd struct{}
 
-func (c *ConfigPathCmd) Run(flags *RootFlags) error {
+func (c *ConfigPathCmd) Run(_ *RootFlags) error {
 	path, err := config.ConfigPath()
 	if err != nil {
 		return &ExitError{Code: CodeError, Err: err}

@@ -65,8 +65,9 @@ func (c *DomainListCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"NAME", "STATUS", "EXPIRY", "AUTO-RENEW", "REGISTRANT"}
-	var rows [][]string
-	for _, d := range resp.Entities {
+	rows := make([][]string, 0, len(resp.Entities))
+	for i := range resp.Entities {
+		d := &resp.Entities[i]
 		autoRenew := "no"
 		if d.AutoRenew {
 			autoRenew = "yes"
@@ -273,7 +274,7 @@ func (c *DomainCheckBulkCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"DOMAIN", "AVAILABLE", "PRICE"}
-	var rows [][]string
+	rows := make([][]string, 0, len(results))
 	for _, r := range results {
 		avail := "no"
 		if r.Available {
@@ -330,7 +331,7 @@ func (c *DomainRegisterCmd) Run(flags *RootFlags) error {
 		PrivacyProxy: &c.Privacy,
 	}
 
-	process, err := client.RegisterDomain(ctx, c.Domain, req)
+	process, err := client.RegisterDomain(ctx, c.Domain, &req)
 	if err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
@@ -354,7 +355,7 @@ type DomainUpdateCmd struct {
 	AutoRenew  *bool    `help:"Enable/disable auto-renewal"`
 }
 
-func (c *DomainUpdateCmd) Run(flags *RootFlags) error {
+func (c *DomainUpdateCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -369,7 +370,7 @@ func (c *DomainUpdateCmd) Run(flags *RootFlags) error {
 		AutoRenew:   c.AutoRenew,
 	}
 
-	if err := client.UpdateDomain(ctx, c.Domain, req); err != nil {
+	if err := client.UpdateDomain(ctx, c.Domain, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 

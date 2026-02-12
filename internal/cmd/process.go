@@ -51,8 +51,9 @@ func (c *ProcessListCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"ID", "STATUS", "ACTION", "ENTITY", "CREATED"}
-	var rows [][]string
-	for _, p := range resp.Entities {
+	rows := make([][]string, 0, len(resp.Entities))
+	for i := range resp.Entities {
+		p := &resp.Entities[i]
 		rows = append(rows, []string{
 			fmt.Sprintf("%d", p.ID),
 			p.Status,
@@ -170,7 +171,7 @@ type ProcessResendCmd struct {
 	ID int `arg:"" help:"Process ID"`
 }
 
-func (c *ProcessResendCmd) Run(flags *RootFlags) error {
+func (c *ProcessResendCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()

@@ -47,7 +47,7 @@ func (c *TLDListCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"TLD", "CREATE PRICE", "RENEW PRICE", "TRANSFER PRICE"}
-	var rows [][]string
+	rows := make([][]string, 0, len(resp.Entities))
 	for _, t := range resp.Entities {
 		rows = append(rows, []string{
 			t.TLD,

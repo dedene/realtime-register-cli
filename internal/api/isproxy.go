@@ -108,7 +108,7 @@ func (c *IsProxyClient) Check(domain, tld string) (*IsProxyResult, error) {
 
 // CheckMany checks multiple domains efficiently.
 func (c *IsProxyClient) CheckMany(domains []string) ([]IsProxyResult, error) {
-	var results []IsProxyResult
+	results := make([]IsProxyResult, 0, len(domains))
 
 	for _, full := range domains {
 		parts := strings.SplitN(full, ".", 2)

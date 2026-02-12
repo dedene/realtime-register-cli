@@ -54,7 +54,7 @@ func (t *RetryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 
 		// Compute backoff: 1s, 2s, 4s ...
-		backoff := time.Second * (1 << uint(attempt))
+		backoff := time.Second * time.Duration(1<<min(attempt, 4)) //nolint:gosec // G115: attempt bounded by MaxRetries
 
 		// Respect Retry-After header if present and larger.
 		if ra := parseRetryAfterHeader(resp.Header.Get("Retry-After")); ra > backoff {

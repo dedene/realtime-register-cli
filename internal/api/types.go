@@ -155,7 +155,7 @@ type Pricelist struct {
 }
 
 // GetTLDPrice finds the CREATE price for a TLD in cents, returns price and currency.
-func (p *Pricelist) GetTLDPrice(tld string) (int, string, bool) {
+func (p *Pricelist) GetTLDPrice(tld string) (price int, currency string, found bool) {
 	product := "domain_" + tld
 	for _, entry := range p.Prices {
 		if entry.Product == product && entry.Action == "CREATE" {

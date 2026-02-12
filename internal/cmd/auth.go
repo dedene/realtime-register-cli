@@ -19,7 +19,7 @@ type AuthCmd struct {
 // AuthLoginCmd stores API key.
 type AuthLoginCmd struct{}
 
-func (c *AuthLoginCmd) Run(flags *RootFlags) error {
+func (c *AuthLoginCmd) Run(_ *RootFlags) error {
 	fmt.Print("Enter API key: ")
 	keyBytes, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
@@ -48,7 +48,7 @@ func (c *AuthLoginCmd) Run(flags *RootFlags) error {
 // AuthStatusCmd shows auth status.
 type AuthStatusCmd struct{}
 
-func (c *AuthStatusCmd) Run(flags *RootFlags) error {
+func (c *AuthStatusCmd) Run(_ *RootFlags) error {
 	if os.Getenv("RR_API_KEY") != "" {
 		fmt.Println("Authenticated via RR_API_KEY environment variable")
 		return nil
@@ -75,7 +75,7 @@ func (c *AuthStatusCmd) Run(flags *RootFlags) error {
 // AuthLogoutCmd removes API key.
 type AuthLogoutCmd struct{}
 
-func (c *AuthLogoutCmd) Run(flags *RootFlags) error {
+func (c *AuthLogoutCmd) Run(_ *RootFlags) error {
 	store, err := auth.NewStore("")
 	if err != nil {
 		return &ExitError{Code: CodeError, Err: fmt.Errorf("open keyring: %w", err)}

@@ -10,7 +10,7 @@ type CompletionCmd struct {
 	Shell string `arg:"" help:"Shell type" enum:"bash,zsh,fish"`
 }
 
-func (c *CompletionCmd) Run(flags *RootFlags) error {
+func (c *CompletionCmd) Run(_ *RootFlags) error {
 	switch c.Shell {
 	case "bash":
 		fmt.Fprintln(os.Stdout, bashCompletion)

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -75,8 +76,8 @@ func TestMockServer_NotFoundError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	notFoundErr, ok := err.(*NotFoundError)
-	if !ok {
+	var notFoundErr *NotFoundError
+	if !errors.As(err, &notFoundErr) {
 		t.Fatalf("expected *NotFoundError, got %T", err)
 	}
 	if notFoundErr.StatusCode != 404 {
@@ -98,8 +99,8 @@ func TestMockServer_APIError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	apiErr, ok := err.(*APIError)
-	if !ok {
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
 		t.Fatalf("expected *APIError, got %T", err)
 	}
 	if apiErr.StatusCode != 400 {

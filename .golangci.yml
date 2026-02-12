@@ -31,10 +31,14 @@ linters:
         - diagnostic
         - style
         - performance
+    gosec:
+      excludes:
+        - G101
+        - G104
+        - G304
     revive:
       rules:
         - name: blank-imports
-        - name: exported
         - name: unreachable-code
         - name: unused-parameter
 

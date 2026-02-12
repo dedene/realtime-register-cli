@@ -121,7 +121,7 @@ func (c *Client) CheckDomain(ctx context.Context, name string) (*DomainAvailabil
 }
 
 // RegisterDomain registers a new domain.
-func (c *Client) RegisterDomain(ctx context.Context, name string, req RegisterRequest) (*Process, error) {
+func (c *Client) RegisterDomain(ctx context.Context, name string, req *RegisterRequest) (*Process, error) {
 	var process Process
 	if err := c.Post(ctx, "/domains/"+url.PathEscape(name), req, &process); err != nil {
 		return nil, err
@@ -130,7 +130,7 @@ func (c *Client) RegisterDomain(ctx context.Context, name string, req RegisterRe
 }
 
 // UpdateDomain updates domain settings.
-func (c *Client) UpdateDomain(ctx context.Context, name string, req UpdateRequest) error {
+func (c *Client) UpdateDomain(ctx context.Context, name string, req *UpdateRequest) error {
 	return c.Post(ctx, "/domains/"+url.PathEscape(name)+"/update", req, nil)
 }
 

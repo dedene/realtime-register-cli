@@ -48,7 +48,7 @@ func (c *Client) SetUserAgent(ua string) {
 }
 
 // do executes an API request with auth and error handling.
-func (c *Client) do(ctx context.Context, method, path string, body any, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, body, out any) error {
 	var bodyReader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)

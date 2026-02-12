@@ -71,7 +71,7 @@ func (c *Client) GetZone(ctx context.Context, id int) (*Zone, error) {
 }
 
 // CreateZone creates a new DNS zone.
-func (c *Client) CreateZone(ctx context.Context, req ZoneRequest) (int, error) {
+func (c *Client) CreateZone(ctx context.Context, req *ZoneRequest) (int, error) {
 	var resp CreateZoneResponse
 	if err := c.Post(ctx, "/dns/zones", req, &resp); err != nil {
 		return 0, err
@@ -80,7 +80,7 @@ func (c *Client) CreateZone(ctx context.Context, req ZoneRequest) (int, error) {
 }
 
 // UpdateZone updates a DNS zone.
-func (c *Client) UpdateZone(ctx context.Context, id int, req ZoneRequest) error {
+func (c *Client) UpdateZone(ctx context.Context, id int, req *ZoneRequest) error {
 	return c.Post(ctx, fmt.Sprintf("/dns/zones/%d/update", id), req, nil)
 }
 

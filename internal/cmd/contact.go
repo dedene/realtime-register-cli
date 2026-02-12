@@ -55,8 +55,9 @@ func (c *ContactListCmd) Run(flags *RootFlags) error {
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	headers := []string{"HANDLE", "NAME", "EMAIL", "PHONE", "COUNTRY"}
-	var rows [][]string
-	for _, ct := range resp.Entities {
+	rows := make([][]string, 0, len(resp.Entities))
+	for i := range resp.Entities {
+		ct := &resp.Entities[i]
 		rows = append(rows, []string{
 			ct.Handle,
 			ct.Name,
@@ -120,7 +121,7 @@ type ContactCreateCmd struct {
 	Org     string   `help:"Organization name"`
 }
 
-func (c *ContactCreateCmd) Run(flags *RootFlags) error {
+func (c *ContactCreateCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -146,7 +147,7 @@ func (c *ContactCreateCmd) Run(flags *RootFlags) error {
 		Country:      c.Country,
 	}
 
-	if err := client.CreateContact(ctx, customer, c.Handle, req); err != nil {
+	if err := client.CreateContact(ctx, customer, c.Handle, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
@@ -168,7 +169,7 @@ type ContactUpdateCmd struct {
 	Org     string   `help:"Organization name"`
 }
 
-func (c *ContactUpdateCmd) Run(flags *RootFlags) error {
+func (c *ContactUpdateCmd) Run(_ *RootFlags) error {
 	ctx := context.Background()
 
 	apiKey, err := getAPIKey()
@@ -194,7 +195,7 @@ func (c *ContactUpdateCmd) Run(flags *RootFlags) error {
 		Country:      c.Country,
 	}
 
-	if err := client.UpdateContact(ctx, customer, c.Handle, req); err != nil {
+	if err := client.UpdateContact(ctx, customer, c.Handle, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 

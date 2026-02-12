@@ -71,13 +71,13 @@ func (c *Client) GetContact(ctx context.Context, customer, handle string) (*Cont
 }
 
 // CreateContact creates a new contact.
-func (c *Client) CreateContact(ctx context.Context, customer, handle string, req ContactRequest) error {
+func (c *Client) CreateContact(ctx context.Context, customer, handle string, req *ContactRequest) error {
 	path := fmt.Sprintf("/customers/%s/contacts/%s", url.PathEscape(customer), url.PathEscape(handle))
 	return c.Post(ctx, path, req, nil)
 }
 
 // UpdateContact updates an existing contact.
-func (c *Client) UpdateContact(ctx context.Context, customer, handle string, req ContactRequest) error {
+func (c *Client) UpdateContact(ctx context.Context, customer, handle string, req *ContactRequest) error {
 	path := fmt.Sprintf("/customers/%s/contacts/%s/update", url.PathEscape(customer), url.PathEscape(handle))
 	return c.Post(ctx, path, req, nil)
 }

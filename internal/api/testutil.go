@@ -39,7 +39,7 @@ func (m *MockServer) On(method, path string, handler http.HandlerFunc) {
 
 // OnJSON registers a handler that returns JSON.
 func (m *MockServer) OnJSON(method, path string, status int, body any) {
-	m.On(method, path, func(w http.ResponseWriter, r *http.Request) {
+	m.On(method, path, func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		if body != nil {
