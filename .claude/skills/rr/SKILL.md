@@ -7,9 +7,25 @@ description: |
   Trigger phrases: "domain availability", "register domain", "DNS records",
   "RealtimeRegister", "rr command", "domain expiry", "transfer domain"
 license: MIT
+homepage: https://github.com/dedene/realtime-register-cli
 metadata:
   author: dedene
-  version: "1.0.0"
+  version: "1.1.0"
+  openclaw:
+    primaryEnv: RR_API_KEY
+    requires:
+      env:
+        - RR_API_KEY
+      bins:
+        - rr
+    install:
+      - kind: brew
+        tap: dedene/tap
+        formula: rr
+        bins: [rr]
+      - kind: go
+        package: github.com/dedene/realtime-register-cli/cmd/rr
+        bins: [rr]
 ---
 
 # rr CLI - RealtimeRegister Domain Management
