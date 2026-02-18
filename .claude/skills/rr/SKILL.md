@@ -57,6 +57,25 @@ export RR_API_KEY=your-api-key
 rr config set customer mycustomer
 ```
 
+## Pagination
+
+All `list` commands return **max 50 results by default**. Use `--limit` and `--offset` to paginate:
+
+```bash
+rr domain list --limit 100              # First 100
+rr domain list --limit 100 --offset 100 # Next 100
+```
+
+**Loop to get all results:**
+```bash
+offset=0; while true; do
+  batch=$(rr domain list --limit 100 --offset $offset --json)
+  [ "$(echo "$batch" | jq length)" -eq 0 ] && break
+  echo "$batch" | jq -r '.[].domainName'
+  offset=$((offset + 100))
+done
+```
+
 ## Output Formats
 
 Always use `--json` for parsing. TSV (`--plain`) for simple scripting.
@@ -72,7 +91,7 @@ rr domain list --plain  # TSV (tab-separated)
 ### Domains
 | Command | Description |
 |---------|-------------|
-| `rr domain list` | List all domains |
+| `rr domain list` | List domains (paginated, default 50) |
 | `rr domain get <domain>` | Get domain details |
 | `rr domain check <domain>` | Check availability |
 | `rr domain check-bulk <domains...>` | Bulk check (max 50) |
@@ -83,14 +102,14 @@ rr domain list --plain  # TSV (tab-separated)
 ### Contacts
 | Command | Description |
 |---------|-------------|
-| `rr contact list` | List contacts |
+| `rr contact list` | List contacts (paginated, default 50) |
 | `rr contact create <handle>` | Create contact |
 | `rr contact update <handle>` | Update contact |
 
 ### DNS Zones
 | Command | Description |
 |---------|-------------|
-| `rr zone list` | List zones |
+| `rr zone list` | List zones (paginated, default 50) |
 | `rr zone get <id>` | Get zone with records |
 | `rr zone record add <zoneID>` | Add DNS record |
 | `rr zone sync <id> --file records.yaml` | Sync from YAML |
@@ -99,7 +118,7 @@ rr domain list --plain  # TSV (tab-separated)
 | Command | Description |
 |---------|-------------|
 | `rr status` | Account overview |
-| `rr process list` | List async processes |
+| `rr process list` | List processes (paginated, default 50) |
 | `rr tld list` | List available TLDs |
 
 ## Common Workflows
@@ -173,9 +192,6 @@ rr domain list --json | jq '.[] | select(.status=="active")'
 ```bash
 # Skip confirmation prompts
 rr domain delete example.com -y
-
-# Pagination
-rr domain list --limit 100 --offset 0 --json
 ```
 
 
