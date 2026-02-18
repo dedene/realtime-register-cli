@@ -7,17 +7,30 @@ before:
     - go mod tidy
 
 builds:
-  - main: ./cmd/rr
+  - id: rr
+    main: ./cmd/rr
     binary: rr
     env:
       - CGO_ENABLED=0
-    goos:
-      - darwin
-      - linux
-      - windows
-    goarch:
-      - amd64
-      - arm64
+    targets:
+      - linux_amd64
+      - linux_arm64
+      - windows_amd64
+      - windows_arm64
+    ldflags:
+      - -s -w
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.version={{.Version}}
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.commit={{.ShortCommit}}
+      - -X github.com/dedene/realtime-register-cli/internal/cmd.date={{.Date}}
+
+  - id: rr_darwin
+    main: ./cmd/rr
+    binary: rr
+    env:
+      - CGO_ENABLED=1
+    targets:
+      - darwin_amd64
+      - darwin_arm64
     ldflags:
       - -s -w
       - -X github.com/dedene/realtime-register-cli/internal/cmd.version={{.Version}}
@@ -25,11 +38,16 @@ builds:
       - -X github.com/dedene/realtime-register-cli/internal/cmd.date={{.Date}}
 
 archives:
-  - format: tar.gz
+  - ids:
+      - rr
+      - rr_darwin
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 checksum:
   name_template: 'checksums.txt'
