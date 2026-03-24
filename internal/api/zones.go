@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Zone API endpoints per SPEC.md:
@@ -23,6 +24,24 @@ type ZoneRequest struct {
 	Expire     int         `json:"expire,omitempty"`
 	DNSSecMode string      `json:"dnssecMode,omitempty"`
 	Records    []DNSRecord `json:"records,omitempty"`
+}
+
+type zoneUpdateRequest struct {
+	Name       string              `json:"name,omitempty"`
+	TTL        int                 `json:"ttl,omitempty"`
+	Refresh    int                 `json:"refresh,omitempty"`
+	Retry      int                 `json:"retry,omitempty"`
+	Expire     int                 `json:"expire,omitempty"`
+	DNSSecMode string              `json:"dnssecMode,omitempty"`
+	Records    *[]zoneUpdateRecord `json:"records,omitempty"`
+}
+
+type zoneUpdateRecord struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Content string `json:"content"`
+	TTL     int    `json:"ttl"`
+	Prio    *int   `json:"prio,omitempty"`
 }
 
 // CreateZoneResponse is returned when creating a zone.
@@ -103,7 +122,52 @@ func (c *Client) CreateZone(ctx context.Context, req *ZoneRequest) (int, error) 
 
 // UpdateZone updates a DNS zone.
 func (c *Client) UpdateZone(ctx context.Context, id int, req *ZoneRequest) error {
-	return c.Post(ctx, fmt.Sprintf("/dns/zones/%d/update", id), req, nil)
+	payload := newZoneUpdateRequest(req)
+	return c.Post(ctx, fmt.Sprintf("/dns/zones/%d/update", id), payload, nil)
+}
+
+func newZoneUpdateRequest(req *ZoneRequest) *zoneUpdateRequest {
+	if req == nil {
+		return nil
+	}
+
+	payload := &zoneUpdateRequest{
+		Name:       req.Name,
+		TTL:        req.TTL,
+		Refresh:    req.Refresh,
+		Retry:      req.Retry,
+		Expire:     req.Expire,
+		DNSSecMode: req.DNSSecMode,
+	}
+
+	if req.Records == nil {
+		return payload
+	}
+
+	records := make([]zoneUpdateRecord, 0, len(req.Records))
+	for _, record := range req.Records {
+		records = append(records, newZoneUpdateRecord(record))
+	}
+	payload.Records = &records
+
+	return payload
+}
+
+func newZoneUpdateRecord(record DNSRecord) zoneUpdateRecord {
+	wireRecord := zoneUpdateRecord{
+		Name:    record.Name,
+		Type:    record.Type,
+		Content: record.Content,
+		TTL:     record.TTL,
+	}
+
+	switch strings.ToUpper(record.Type) {
+	case "MX", "SRV":
+		prio := record.Prio
+		wireRecord.Prio = &prio
+	}
+
+	return wireRecord
 }
 
 // DeleteZone deletes a DNS zone.

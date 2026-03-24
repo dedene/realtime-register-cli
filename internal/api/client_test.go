@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"errors"
+	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -105,5 +107,87 @@ func TestMockServer_APIError(t *testing.T) {
 	}
 	if apiErr.StatusCode != 400 {
 		t.Errorf("APIError.StatusCode = %d, want 400", apiErr.StatusCode)
+	}
+}
+
+func TestUpdateZone_CorrelatesDnsRecordErrorsToRequestRecords(t *testing.T) {
+	t.Parallel()
+
+	mock := NewMockServer(t)
+	defer mock.Close()
+
+	mock.OnJSON(http.MethodPost, "/dns/zones/123/update", http.StatusBadRequest, map[string]any{
+		"type":    "DnsConfigurationException",
+		"message": "Errors have been found in the DNS records",
+		"errors": map[string]any{
+			"1": map[string]string{
+				"content": "Must be a valid hostname",
+			},
+		},
+		"conflicts": map[string]any{
+			"1": []int{0},
+		},
+	})
+
+	client := mock.Client()
+	err := client.UpdateZone(context.Background(), 123, &ZoneRequest{
+		Records: []DNSRecord{
+			{Type: "TXT", Name: "example.com", Content: "v=spf1 ~all", TTL: 3600},
+			{Type: "MX", Name: "example.com", Content: "blackhole.tem.scaleway.com.", TTL: 3600, Prio: 10},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+
+	wantParts := []string{
+		`record 1.content: Must be a valid hostname [1: MX example.com -> blackhole.tem.scaleway.com. (prio 10)]`,
+		`record 1 conflicts with records 0 [1: MX example.com -> blackhole.tem.scaleway.com. (prio 10); 0: TXT example.com -> v=spf1 ~all]`,
+	}
+	for _, want := range wantParts {
+		if !strings.Contains(apiErr.Details, want) {
+			t.Fatalf("Details = %q, want substring %q", apiErr.Details, want)
+		}
+	}
+}
+
+func TestUpdateZone_LeavesUnknownRecordIndexesUntouched(t *testing.T) {
+	t.Parallel()
+
+	mock := NewMockServer(t)
+	defer mock.Close()
+
+	mock.OnJSON(http.MethodPost, "/dns/zones/123/update", http.StatusBadRequest, map[string]any{
+		"type":    "DnsConfigurationException",
+		"message": "Errors have been found in the DNS records",
+		"errors": map[string]any{
+			"9": map[string]string{
+				"content": "Must be a valid hostname",
+			},
+		},
+	})
+
+	client := mock.Client()
+	err := client.UpdateZone(context.Background(), 123, &ZoneRequest{
+		Records: []DNSRecord{
+			{Type: "MX", Name: "example.com", Content: "mail.example.com", TTL: 3600, Prio: 10},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+
+	if got, want := apiErr.Details, "record 9.content: Must be a valid hostname"; got != want {
+		t.Fatalf("Details = %q, want %q", got, want)
 	}
 }
