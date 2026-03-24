@@ -97,6 +97,7 @@ type Zone struct {
 	ID          int         `json:"id"`
 	Name        string      `json:"name"`
 	Customer    string      `json:"customer"`
+	Managed     bool        `json:"managed"`
 	Service     string      `json:"service,omitempty"`
 	TTL         int         `json:"ttl"`
 	DNSSec      bool        `json:"dnssec"`

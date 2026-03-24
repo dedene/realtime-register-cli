@@ -10,7 +10,7 @@ license: MIT
 homepage: https://github.com/dedene/realtime-register-cli
 metadata:
   author: dedene
-  version: "1.1.0"
+  version: "1.2.0"
   openclaw:
     primaryEnv: RR_API_KEY
     requires:
@@ -110,7 +110,11 @@ rr domain list --plain  # TSV (tab-separated)
 | Command | Description |
 |---------|-------------|
 | `rr zone list` | List zones (paginated, default 50) |
+| `rr zone list --name <domain>` | Filter zones by exact zone name |
+| `rr zone list --managed\|--unmanaged` | Filter by managed status |
+| `rr zone list --service BASIC\|PREMIUM` | Filter by DNS service tier |
 | `rr zone get <id>` | Get zone with records |
+| `rr zone get --domain <domain>` | Get zone directly from a domain |
 | `rr zone record add <zoneID>` | Add DNS record |
 | `rr zone sync <id> --file records.yaml` | Sync from YAML |
 
@@ -143,9 +147,12 @@ rr contact create myhandle \
 
 ### DNS Zone Management
 ```bash
-ZONE_ID=$(rr zone list --json | jq -r '.[] | select(.name=="example.com") | .id')
+ZONE_ID=$(rr zone get --domain example.com --json | jq -r '.id')
 rr zone record add $ZONE_ID --type A --name www --content 1.2.3.4 --ttl 3600
 ```
+
+When you already know the domain, prefer `rr zone get --domain <domain>`.
+Use `rr zone list --name`, `--managed`, `--unmanaged`, or `--service` when you need discovery or narrowing.
 
 ### Monitor Expiring Domains
 ```bash

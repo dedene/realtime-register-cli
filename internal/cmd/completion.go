@@ -43,7 +43,7 @@ const bashCompletion = `_rr() {
             return 0
             ;;
         zone)
-            COMPREPLY=( $(compgen -W "list get create update delete" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "list get create update delete sync record" -- ${cur}) )
             return 0
             ;;
         process)
@@ -124,7 +124,7 @@ complete -c rr -n "__fish_use_subcommand" -a completion -d "Generate completions
 
 complete -c rr -n "__fish_seen_subcommand_from domain" -a "list get check register update delete renew"
 complete -c rr -n "__fish_seen_subcommand_from contact" -a "list get create update delete"
-complete -c rr -n "__fish_seen_subcommand_from zone" -a "list get create update delete"
+complete -c rr -n "__fish_seen_subcommand_from zone" -a "list get create update delete sync record"
 complete -c rr -n "__fish_seen_subcommand_from process" -a "list get info cancel resend"
 complete -c rr -n "__fish_seen_subcommand_from tld" -a "list get"
 complete -c rr -n "__fish_seen_subcommand_from auth" -a "login status logout"

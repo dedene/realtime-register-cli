@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 )
 
 // Zone API endpoints per SPEC.md:
@@ -32,6 +33,9 @@ type CreateZoneResponse struct {
 // ZoneListOptions for filtering zones.
 type ZoneListOptions struct {
 	ListOptions
+	Name    string
+	Managed *bool
+	Service string
 }
 
 // QueryParams builds a URL query string from zone list options.
@@ -45,6 +49,15 @@ func (o ZoneListOptions) QueryParams() string {
 	}
 	if o.Search != "" {
 		v.Set("q", o.Search)
+	}
+	if o.Name != "" {
+		v.Set("name", o.Name)
+	}
+	if o.Managed != nil {
+		v.Set("managed", strconv.FormatBool(*o.Managed))
+	}
+	if o.Service != "" {
+		v.Set("service", o.Service)
 	}
 	if len(v) == 0 {
 		return ""
@@ -65,6 +78,15 @@ func (c *Client) ListZones(ctx context.Context, opts ZoneListOptions) (*ListResp
 func (c *Client) GetZone(ctx context.Context, id int) (*Zone, error) {
 	var zone Zone
 	if err := c.Get(ctx, fmt.Sprintf("/dns/zones/%d", id), &zone); err != nil {
+		return nil, err
+	}
+	return &zone, nil
+}
+
+// GetZoneByDomain returns the DNS zone attached to a managed domain.
+func (c *Client) GetZoneByDomain(ctx context.Context, domain string) (*Zone, error) {
+	var zone Zone
+	if err := c.Get(ctx, "/domains/"+url.PathEscape(domain)+"/zone", &zone); err != nil {
 		return nil, err
 	}
 	return &zone, nil

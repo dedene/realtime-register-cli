@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -25,13 +26,22 @@ type ZoneCmd struct {
 
 // ZoneListCmd lists zones.
 type ZoneListCmd struct {
-	Search string `help:"Search query"`
-	Limit  int    `help:"Max results" default:"50"`
-	Offset int    `help:"Offset for pagination"`
+	Search    string `help:"Search query"`
+	Name      string `help:"Filter by exact zone name"`
+	Managed   bool   `help:"Only show managed zones"`
+	Unmanaged bool   `help:"Only show unmanaged zones"`
+	Service   string `help:"Filter by DNS service (BASIC or PREMIUM)"`
+	Limit     int    `help:"Max results" default:"50"`
+	Offset    int    `help:"Offset for pagination"`
 }
 
 func (c *ZoneListCmd) Run(flags *RootFlags) error {
 	ctx := context.Background()
+
+	opts, err := c.options()
+	if err != nil {
+		return &ExitError{Code: CodeUsage, Err: err}
+	}
 
 	apiKey, err := getAPIKey()
 	if err != nil {
@@ -39,14 +49,6 @@ func (c *ZoneListCmd) Run(flags *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
-	opts := api.ZoneListOptions{
-		ListOptions: api.ListOptions{
-			Limit:  c.Limit,
-			Offset: c.Offset,
-			Search: c.Search,
-		},
-	}
-
 	resp, err := client.ListZones(ctx, opts)
 	if err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
@@ -68,13 +70,47 @@ func (c *ZoneListCmd) Run(flags *RootFlags) error {
 	return f.Output(resp.Entities, headers, rows)
 }
 
+func (c ZoneListCmd) options() (api.ZoneListOptions, error) {
+	if c.Managed && c.Unmanaged {
+		return api.ZoneListOptions{}, fmt.Errorf("cannot use --managed and --unmanaged together")
+	}
+	service := strings.ToUpper(strings.TrimSpace(c.Service))
+	if service != "" && service != "BASIC" && service != "PREMIUM" {
+		return api.ZoneListOptions{}, fmt.Errorf("--service must be one of BASIC or PREMIUM")
+	}
+
+	opts := api.ZoneListOptions{
+		ListOptions: api.ListOptions{
+			Limit:  c.Limit,
+			Offset: c.Offset,
+			Search: c.Search,
+		},
+		Name:    c.Name,
+		Service: service,
+	}
+
+	switch {
+	case c.Managed:
+		opts.Managed = boolPtr(true)
+	case c.Unmanaged:
+		opts.Managed = boolPtr(false)
+	}
+
+	return opts, nil
+}
+
 // ZoneGetCmd gets a single zone.
 type ZoneGetCmd struct {
-	ID int `arg:"" help:"Zone ID"`
+	ID     int    `arg:"" optional:"" help:"Zone ID"`
+	Domain string `help:"Domain name to fetch zone for"`
 }
 
 func (c *ZoneGetCmd) Run(flags *RootFlags) error {
 	ctx := context.Background()
+
+	if err := validateZoneGetSelector(c.ID, c.Domain); err != nil {
+		return &ExitError{Code: CodeUsage, Err: err}
+	}
 
 	apiKey, err := getAPIKey()
 	if err != nil {
@@ -82,9 +118,9 @@ func (c *ZoneGetCmd) Run(flags *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
-	zone, err := client.GetZone(ctx, c.ID)
+	zone, err := resolveZone(ctx, client, c.ID, c.Domain)
 	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
 
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
@@ -120,6 +156,89 @@ func (c *ZoneGetCmd) Run(flags *RootFlags) error {
 	}
 
 	return nil
+}
+
+type zoneLookupClient interface {
+	GetZone(context.Context, int) (*api.Zone, error)
+	GetZoneByDomain(context.Context, string) (*api.Zone, error)
+	ListZones(context.Context, api.ZoneListOptions) (*api.ListResponse[api.Zone], error)
+}
+
+func validateZoneGetSelector(id int, domain string) error {
+	hasID := id > 0
+	hasDomain := domain != ""
+	if hasID == hasDomain {
+		return fmt.Errorf("provide either a zone ID or --domain")
+	}
+	return nil
+}
+
+func resolveZone(ctx context.Context, client zoneLookupClient, id int, domain string) (*api.Zone, error) {
+	if id > 0 {
+		return client.GetZone(ctx, id)
+	}
+
+	zone, err := client.GetZoneByDomain(ctx, domain)
+	if err == nil {
+		return zone, nil
+	}
+
+	var notFoundErr *api.NotFoundError
+	if !errors.As(err, &notFoundErr) {
+		return nil, err
+	}
+
+	resp, err := client.ListZones(ctx, api.ZoneListOptions{
+		ListOptions: api.ListOptions{Limit: 2},
+		Name:        domain,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	switch len(resp.Entities) {
+	case 0:
+		return nil, fmt.Errorf("zone not found for domain %q", domain)
+	case 1:
+		return &resp.Entities[0], nil
+	default:
+		return nil, fmt.Errorf("multiple zones found for domain %q; use rr zone list --name %s or a zone ID", domain, domain)
+	}
+}
+
+func zoneLookupExitCode(err error) int {
+	switch {
+	case err == nil:
+		return CodeSuccess
+	case isAPIError(err):
+		return CodeAPI
+	default:
+		return CodeError
+	}
+}
+
+func isAPIError(err error) bool {
+	var apiErr *api.APIError
+	if errors.As(err, &apiErr) {
+		return true
+	}
+
+	var authErr *api.AuthError
+	if errors.As(err, &authErr) {
+		return true
+	}
+
+	var rateLimitErr *api.RateLimitError
+	if errors.As(err, &rateLimitErr) {
+		return true
+	}
+
+	var notFoundErr *api.NotFoundError
+	return errors.As(err, &notFoundErr)
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
 
 // ZoneCreateCmd creates a zone.

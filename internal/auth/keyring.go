@@ -22,6 +22,7 @@ const (
 
 	keyringService = "rr"
 	apiKeyItem     = "api_key"
+	apiKeyLabel    = "Realtime Register CLI API credential (api.yoursrs.com)"
 
 	keyringTimeout = 30 * time.Second
 )
@@ -69,8 +70,9 @@ func (s *Store) SetAPIKey(key string) error {
 	done := make(chan error, 1)
 	go func() {
 		done <- s.ring.Set(keyring.Item{
-			Key:  apiKeyItem,
-			Data: []byte(key),
+			Key:   apiKeyItem,
+			Data:  []byte(key),
+			Label: apiKeyLabel,
 		})
 	}()
 
