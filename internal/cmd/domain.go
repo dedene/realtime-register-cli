@@ -273,21 +273,16 @@ func (c *DomainCheckBulkCmd) Run(flags *RootFlags) error {
 
 	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
-	headers := []string{"DOMAIN", "AVAILABLE", "PRICE"}
+	headers := []string{"DOMAIN", "AVAILABLE"}
 	rows := make([][]string, 0, len(results))
 	for _, r := range results {
 		avail := "no"
 		if r.Available {
 			avail = "yes"
 		}
-		price := ""
-		if r.Price > 0 {
-			price = fmt.Sprintf("%.2f", r.Price)
-		}
 		rows = append(rows, []string{
 			r.Domain + "." + r.TLD,
 			avail,
-			price,
 		})
 	}
 
