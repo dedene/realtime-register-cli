@@ -44,6 +44,25 @@ func TestFindRecords(t *testing.T) {
 	}
 }
 
+func TestApexRecordName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		zone  string
+		want  string
+	}{
+		{"apex marker", "@", "example.com", "example.com"},
+		{"empty name", "", "example.com", "example.com"},
+		{"fqdn passthrough", "www.example.com", "example.com", "www.example.com"},
+		{"subname passthrough", "_dmarc", "example.com", "_dmarc"},
+	}
+	for _, tt := range tests {
+		if got := apexRecordName(tt.input, tt.zone); got != tt.want {
+			t.Errorf("apexRecordName(%q, %q) = %q, want %q", tt.input, tt.zone, got, tt.want)
+		}
+	}
+}
+
 func TestFindRecords_ReturnsCorrectIndices(t *testing.T) {
 	records := []api.DNSRecord{
 		{Type: "A", Name: "@", Content: "1.2.3.4"},
