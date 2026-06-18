@@ -78,6 +78,13 @@ func TestResolveZoneBySelector_DomainFallbackToExactName(t *testing.T) {
 	t.Parallel()
 
 	client := &fakeZoneClient{
+		getZoneFn: func(_ context.Context, id int) (*api.Zone, error) {
+			if id != 99 {
+				t.Fatalf("GetZone id = %d, want 99 (hydration)", id)
+			}
+			// The list endpoint may omit records; hydration fetches the full zone.
+			return &api.Zone{ID: 99, Name: "example.com", Records: []api.DNSRecord{{Type: "A", Name: "@", Content: "1.2.3.4"}}}, nil
+		},
 		getZoneByDomainFn: func(_ context.Context, _ string) (*api.Zone, error) {
 			return nil, &api.NotFoundError{APIError: api.APIError{StatusCode: 404, Message: "not found"}}
 		},
@@ -100,6 +107,9 @@ func TestResolveZoneBySelector_DomainFallbackToExactName(t *testing.T) {
 	}
 	if zone.ID != 99 {
 		t.Fatalf("resolveZone().ID = %d, want 99", zone.ID)
+	}
+	if len(zone.Records) == 0 {
+		t.Fatalf("resolveZone() returned a zone without hydrated records")
 	}
 }
 
@@ -166,36 +176,101 @@ func TestResolveZoneBySelector_DomainFallbackErrors(t *testing.T) {
 	}
 }
 
-func TestValidateZoneGetSelector(t *testing.T) {
+func TestZoneGetSelector(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name    string
-		id      int
-		domain  string
-		wantErr string
+		name       string
+		arg        string
+		domainFlag string
+		wantID     int
+		wantDomain string
+		wantErr    string
 	}{
-		{name: "id only", id: 42},
-		{name: "domain only", domain: "example.com"},
-		{name: "neither", wantErr: "provide either a zone ID or --domain"},
-		{name: "both", id: 42, domain: "example.com", wantErr: "provide either a zone ID or --domain"},
+		{name: "numeric id", arg: "42", wantID: 42},
+		{name: "domain arg", arg: "example.com", wantDomain: "example.com"},
+		{name: "domain flag", domainFlag: "example.com", wantDomain: "example.com"},
+		{name: "neither", wantErr: "provide a zone ID or domain name"},
+		{name: "both", arg: "42", domainFlag: "example.com", wantErr: "not both"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateZoneGetSelector(tt.id, tt.domain)
-			if tt.wantErr == "" && err != nil {
-				t.Fatalf("validateZoneGetSelector() error = %v", err)
-			}
+			id, domain, err := zoneGetSelector(tt.arg, tt.domainFlag)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
-					t.Fatalf("validateZoneGetSelector() error = %v, want substring %q", err, tt.wantErr)
+					t.Fatalf("zoneGetSelector() error = %v, want substring %q", err, tt.wantErr)
 				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("zoneGetSelector() error = %v", err)
+			}
+			if id != tt.wantID || domain != tt.wantDomain {
+				t.Fatalf("zoneGetSelector() = (%d, %q), want (%d, %q)", id, domain, tt.wantID, tt.wantDomain)
 			}
 		})
 	}
+}
+
+func TestParseZoneArg(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		arg        string
+		wantID     int
+		wantDomain string
+	}{
+		{"42", 42, ""},
+		{"  42  ", 42, ""},
+		{"example.com", 0, "example.com"},
+		{"0", 0, "0"},
+		{"-1", 0, "-1"},
+	}
+	for _, tt := range tests {
+		id, domain := parseZoneArg(tt.arg)
+		if id != tt.wantID || domain != tt.wantDomain {
+			t.Errorf("parseZoneArg(%q) = (%d, %q), want (%d, %q)", tt.arg, id, domain, tt.wantID, tt.wantDomain)
+		}
+	}
+}
+
+func TestResolveZoneID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("numeric passthrough", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeZoneClient{
+			getZoneFn: func(_ context.Context, id int) (*api.Zone, error) {
+				return &api.Zone{ID: id, Name: "example.com"}, nil
+			},
+		}
+		id, err := resolveZoneID(context.Background(), client, "55")
+		if err != nil {
+			t.Fatalf("resolveZoneID() error = %v", err)
+		}
+		if id != 55 {
+			t.Fatalf("resolveZoneID() = %d, want 55", id)
+		}
+	})
+
+	t.Run("domain resolves to id", func(t *testing.T) {
+		t.Parallel()
+		client := &fakeZoneClient{
+			getZoneByDomainFn: func(_ context.Context, domain string) (*api.Zone, error) {
+				return &api.Zone{ID: 7, Name: domain}, nil
+			},
+		}
+		id, err := resolveZoneID(context.Background(), client, "example.com")
+		if err != nil {
+			t.Fatalf("resolveZoneID() error = %v", err)
+		}
+		if id != 7 {
+			t.Fatalf("resolveZoneID() = %d, want 7", id)
+		}
+	})
 }
 
 func TestZoneListCmdOptions(t *testing.T) {

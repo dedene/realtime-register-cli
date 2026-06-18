@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -67,7 +68,11 @@ func (c *ZoneListCmd) Run(flags *RootFlags) error {
 		})
 	}
 
-	return f.Output(resp.Entities, headers, rows)
+	if err := f.Output(resp.Entities, headers, rows); err != nil {
+		return err
+	}
+	warnIfCapped(resp.Pagination.Total, len(resp.Entities), c.Limit)
+	return nil
 }
 
 func (c ZoneListCmd) options() (api.ZoneListOptions, error) {
@@ -101,14 +106,15 @@ func (c ZoneListCmd) options() (api.ZoneListOptions, error) {
 
 // ZoneGetCmd gets a single zone.
 type ZoneGetCmd struct {
-	ID     int    `arg:"" optional:"" help:"Zone ID"`
+	Zone   string `arg:"" optional:"" name:"zone" help:"Zone ID or domain name"`
 	Domain string `help:"Domain name to fetch zone for"`
 }
 
 func (c *ZoneGetCmd) Run(flags *RootFlags) error {
 	ctx := context.Background()
 
-	if err := validateZoneGetSelector(c.ID, c.Domain); err != nil {
+	id, domain, err := zoneGetSelector(c.Zone, c.Domain)
+	if err != nil {
 		return &ExitError{Code: CodeUsage, Err: err}
 	}
 
@@ -118,7 +124,7 @@ func (c *ZoneGetCmd) Run(flags *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
-	zone, err := resolveZone(ctx, client, c.ID, c.Domain)
+	zone, err := resolveZone(ctx, client, id, domain)
 	if err != nil {
 		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
@@ -164,13 +170,40 @@ type zoneLookupClient interface {
 	ListZones(context.Context, api.ZoneListOptions) (*api.ListResponse[api.Zone], error)
 }
 
-func validateZoneGetSelector(id int, domain string) error {
-	hasID := id > 0
-	hasDomain := domain != ""
-	if hasID == hasDomain {
-		return fmt.Errorf("provide either a zone ID or --domain")
+// zoneGetSelector derives the (id, domain) lookup pair from the positional argument
+// (a numeric zone ID or a domain name) and the optional --domain flag.
+func zoneGetSelector(arg, domainFlag string) (id int, domain string, err error) {
+	arg = strings.TrimSpace(arg)
+	switch {
+	case arg != "" && domainFlag != "":
+		return 0, "", fmt.Errorf("provide either a zone ID/domain argument or --domain, not both")
+	case domainFlag != "":
+		return 0, domainFlag, nil
+	case arg != "":
+		id, domain = parseZoneArg(arg)
+		return id, domain, nil
+	default:
+		return 0, "", fmt.Errorf("provide a zone ID or domain name")
 	}
-	return nil
+}
+
+// parseZoneArg interprets a zone argument as either a numeric zone ID or a domain name.
+func parseZoneArg(arg string) (id int, domain string) {
+	trimmed := strings.TrimSpace(arg)
+	if n, err := strconv.Atoi(trimmed); err == nil && n > 0 {
+		return n, ""
+	}
+	return 0, trimmed
+}
+
+// resolveZoneID resolves a zone argument (ID or domain) to a numeric zone ID.
+func resolveZoneID(ctx context.Context, client zoneLookupClient, arg string) (int, error) {
+	id, domain := parseZoneArg(arg)
+	zone, err := resolveZone(ctx, client, id, domain)
+	if err != nil {
+		return 0, err
+	}
+	return zone.ID, nil
 }
 
 func resolveZone(ctx context.Context, client zoneLookupClient, id int, domain string) (*api.Zone, error) {
@@ -200,7 +233,9 @@ func resolveZone(ctx context.Context, client zoneLookupClient, id int, domain st
 	case 0:
 		return nil, fmt.Errorf("zone not found for domain %q", domain)
 	case 1:
-		return &resp.Entities[0], nil
+		// Fetch by ID so record-mutating callers always get the full record set,
+		// even if the list endpoint were ever to return zones without records.
+		return client.GetZone(ctx, resp.Entities[0].ID)
 	default:
 		return nil, fmt.Errorf("multiple zones found for domain %q; use rr zone list --name %s or a zone ID", domain, domain)
 	}
@@ -278,8 +313,8 @@ func (c *ZoneCreateCmd) Run(flags *RootFlags) error {
 
 // ZoneUpdateCmd updates a zone.
 type ZoneUpdateCmd struct {
-	ID  int `arg:"" help:"Zone ID"`
-	TTL int `help:"Default TTL"`
+	Zone string `arg:"" name:"zone" help:"Zone ID or domain name"`
+	TTL  int    `help:"Default TTL"`
 }
 
 func (c *ZoneUpdateCmd) Run(_ *RootFlags) error {
@@ -291,21 +326,27 @@ func (c *ZoneUpdateCmd) Run(_ *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
+
+	id, err := resolveZoneID(ctx, client, c.Zone)
+	if err != nil {
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
+	}
+
 	req := api.ZoneRequest{
 		TTL: c.TTL,
 	}
 
-	if err := client.UpdateZone(ctx, c.ID, &req); err != nil {
+	if err := client.UpdateZone(ctx, id, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Zone %d updated.\n", c.ID)
+	fmt.Printf("Zone %d updated.\n", id)
 	return nil
 }
 
 // ZoneDeleteCmd deletes a zone.
 type ZoneDeleteCmd struct {
-	ID int `arg:"" help:"Zone ID to delete"`
+	Zone string `arg:"" name:"zone" help:"Zone ID or domain name to delete"`
 }
 
 func (c *ZoneDeleteCmd) Run(flags *RootFlags) error {
@@ -316,8 +357,16 @@ func (c *ZoneDeleteCmd) Run(flags *RootFlags) error {
 		return err
 	}
 
+	client := api.NewClient(apiKey)
+
+	id, domain := parseZoneArg(c.Zone)
+	zone, err := resolveZone(ctx, client, id, domain)
+	if err != nil {
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
+	}
+
 	if !flags.Yes {
-		fmt.Printf("Delete zone %d? This cannot be undone. [y/N]: ", c.ID)
+		fmt.Printf("Delete zone %d (%s)? This cannot be undone. [y/N]: ", zone.ID, zone.Name)
 		var response string
 		fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
@@ -326,12 +375,11 @@ func (c *ZoneDeleteCmd) Run(flags *RootFlags) error {
 		}
 	}
 
-	client := api.NewClient(apiKey)
-	if err := client.DeleteZone(ctx, c.ID); err != nil {
+	if err := client.DeleteZone(ctx, zone.ID); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Zone %d deleted.\n", c.ID)
+	fmt.Printf("Zone %d deleted.\n", zone.ID)
 	return nil
 }
 
@@ -344,7 +392,7 @@ type ZoneRecordCmd struct {
 
 // ZoneRecordAddCmd adds a record to a zone.
 type ZoneRecordAddCmd struct {
-	ZoneID   int    `arg:"" help:"Zone ID"`
+	Zone     string `arg:"" name:"zone" help:"Zone ID or domain name"`
 	Type     string `help:"Record type (A, AAAA, CNAME, MX, TXT, etc.)" required:""`
 	Name     string `help:"Record name (@ for apex)" required:""`
 	Content  string `help:"Record content" required:""`
@@ -362,13 +410,14 @@ func (c *ZoneRecordAddCmd) Run(_ *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 
-	zone, err := client.GetZone(ctx, c.ZoneID)
+	id, domain := parseZoneArg(c.Zone)
+	zone, err := resolveZone(ctx, client, id, domain)
 	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
 
 	newRecord := api.DNSRecord{
-		Name:    c.Name,
+		Name:    apexRecordName(c.Name, zone.Name),
 		Type:    strings.ToUpper(c.Type),
 		Content: c.Content,
 		TTL:     c.TTL,
@@ -377,17 +426,17 @@ func (c *ZoneRecordAddCmd) Run(_ *RootFlags) error {
 	zone.Records = append(zone.Records, newRecord)
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
+	if err := client.UpdateZone(ctx, zone.ID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Record %s %s added to zone %d.\n", c.Type, c.Name, c.ZoneID)
+	fmt.Printf("Record %s %s added to zone %d (%s).\n", c.Type, newRecord.Name, zone.ID, zone.Name)
 	return nil
 }
 
 // ZoneRecordUpdateCmd updates a record in a zone.
 type ZoneRecordUpdateCmd struct {
-	ZoneID     int    `arg:"" help:"Zone ID"`
+	Zone       string `arg:"" name:"zone" help:"Zone ID or domain name"`
 	Type       string `help:"Record type (A, AAAA, CNAME, etc.)" required:""`
 	Name       string `help:"Record name (@ for apex)" required:""`
 	Content    string `help:"New content" required:""`
@@ -406,9 +455,10 @@ func (c *ZoneRecordUpdateCmd) Run(_ *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 
-	zone, err := client.GetZone(ctx, c.ZoneID)
+	id, domain := parseZoneArg(c.Zone)
+	zone, err := resolveZone(ctx, client, id, domain)
 	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
 
 	if len(zone.Records) == 0 {
@@ -416,13 +466,14 @@ func (c *ZoneRecordUpdateCmd) Run(_ *RootFlags) error {
 	}
 
 	typ := strings.ToUpper(c.Type)
-	indices := findRecords(zone.Records, typ, c.Name, c.OldContent)
+	name := apexRecordName(c.Name, zone.Name)
+	indices := findRecords(zone.Records, typ, name, c.OldContent)
 
 	if len(indices) == 0 {
-		return &ExitError{Code: CodeError, Err: fmt.Errorf("no %s record found for name %q", typ, c.Name)}
+		return &ExitError{Code: CodeError, Err: fmt.Errorf("no %s record found for name %q", typ, name)}
 	}
 	if len(indices) > 1 {
-		fmt.Fprintf(os.Stderr, "Multiple %s records found for %q:\n", typ, c.Name)
+		fmt.Fprintf(os.Stderr, "Multiple %s records found for %q:\n", typ, name)
 		for _, i := range indices {
 			r := zone.Records[i]
 			fmt.Fprintf(os.Stderr, "  - %s\n", r.Content)
@@ -441,17 +492,17 @@ func (c *ZoneRecordUpdateCmd) Run(_ *RootFlags) error {
 	}
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
+	if err := client.UpdateZone(ctx, zone.ID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Updated %s %s: %s → %s\n", typ, c.Name, old.Content, c.Content)
+	fmt.Printf("Updated %s %s: %s → %s\n", typ, name, old.Content, c.Content)
 	return nil
 }
 
 // ZoneRecordDeleteCmd deletes a record from a zone.
 type ZoneRecordDeleteCmd struct {
-	ZoneID  int    `arg:"" help:"Zone ID"`
+	Zone    string `arg:"" name:"zone" help:"Zone ID or domain name"`
 	Type    string `help:"Record type (A, AAAA, CNAME, etc.)" required:""`
 	Name    string `help:"Record name (@ for apex)" required:""`
 	Content string `help:"Record content (for disambiguation when multiple records match)"`
@@ -467,9 +518,10 @@ func (c *ZoneRecordDeleteCmd) Run(flags *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 
-	zone, err := client.GetZone(ctx, c.ZoneID)
+	id, domain := parseZoneArg(c.Zone)
+	zone, err := resolveZone(ctx, client, id, domain)
 	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
 
 	if len(zone.Records) == 0 {
@@ -477,13 +529,14 @@ func (c *ZoneRecordDeleteCmd) Run(flags *RootFlags) error {
 	}
 
 	typ := strings.ToUpper(c.Type)
-	indices := findRecords(zone.Records, typ, c.Name, c.Content)
+	name := apexRecordName(c.Name, zone.Name)
+	indices := findRecords(zone.Records, typ, name, c.Content)
 
 	if len(indices) == 0 {
-		return &ExitError{Code: CodeError, Err: fmt.Errorf("no %s record found for name %q", typ, c.Name)}
+		return &ExitError{Code: CodeError, Err: fmt.Errorf("no %s record found for name %q", typ, name)}
 	}
 	if len(indices) > 1 {
-		fmt.Fprintf(os.Stderr, "Multiple %s records found for %q:\n", typ, c.Name)
+		fmt.Fprintf(os.Stderr, "Multiple %s records found for %q:\n", typ, name)
 		for _, i := range indices {
 			r := zone.Records[i]
 			fmt.Fprintf(os.Stderr, "  - %s\n", r.Content)
@@ -495,7 +548,7 @@ func (c *ZoneRecordDeleteCmd) Run(flags *RootFlags) error {
 	record := zone.Records[idx]
 
 	if !flags.Yes {
-		fmt.Printf("Delete %s %s → %s? [y/N]: ", typ, c.Name, record.Content)
+		fmt.Printf("Delete %s %s → %s? [y/N]: ", typ, name, record.Content)
 		var response string
 		fmt.Scanln(&response)
 		if response != "y" && response != "Y" {
@@ -507,12 +560,21 @@ func (c *ZoneRecordDeleteCmd) Run(flags *RootFlags) error {
 	zone.Records = append(zone.Records[:idx], zone.Records[idx+1:]...)
 
 	req := api.ZoneRequest{Records: zone.Records}
-	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
+	if err := client.UpdateZone(ctx, zone.ID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Deleted %s %s → %s\n", typ, c.Name, record.Content)
+	fmt.Printf("Deleted %s %s → %s\n", typ, name, record.Content)
 	return nil
+}
+
+// apexRecordName resolves the conventional "@" apex marker to the zone name. RR stores
+// record names fully-qualified, so the apex record is named after the zone itself.
+func apexRecordName(name, zoneName string) string {
+	if name == "@" || name == "" {
+		return zoneName
+	}
+	return name
 }
 
 // findRecords returns indices of records matching type, name, and optionally content.
@@ -530,8 +592,8 @@ func findRecords(records []api.DNSRecord, typ, name, content string) []int {
 
 // ZoneSyncCmd syncs zone records from a YAML file.
 type ZoneSyncCmd struct {
-	ZoneID int    `arg:"" help:"Zone ID"`
-	File   string `help:"YAML file with records" required:"" type:"existingfile"`
+	Zone string `arg:"" name:"zone" help:"Zone ID or domain name"`
+	File string `help:"YAML file with records" required:"" type:"existingfile"`
 }
 
 // ZoneSyncFile represents the YAML structure for zone sync.
@@ -568,9 +630,10 @@ func (c *ZoneSyncCmd) Run(flags *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 
-	zone, err := client.GetZone(ctx, c.ZoneID)
+	id, domain := parseZoneArg(c.Zone)
+	zone, err := resolveZone(ctx, client, id, domain)
 	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		return &ExitError{Code: zoneLookupExitCode(err), Err: err}
 	}
 
 	newRecords := make([]api.DNSRecord, 0, len(syncFile.Records))
@@ -602,10 +665,10 @@ func (c *ZoneSyncCmd) Run(flags *RootFlags) error {
 	}
 
 	req := api.ZoneRequest{Records: newRecords}
-	if err := client.UpdateZone(ctx, c.ZoneID, &req); err != nil {
+	if err := client.UpdateZone(ctx, zone.ID, &req); err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	fmt.Printf("Zone %d synced with %d records.\n", c.ZoneID, len(newRecords))
+	fmt.Printf("Zone %d synced with %d records.\n", zone.ID, len(newRecords))
 	return nil
 }

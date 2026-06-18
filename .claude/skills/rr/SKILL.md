@@ -113,10 +113,14 @@ rr domain list --plain  # TSV (tab-separated)
 | `rr zone list --name <domain>` | Filter zones by exact zone name |
 | `rr zone list --managed\|--unmanaged` | Filter by managed status |
 | `rr zone list --service BASIC\|PREMIUM` | Filter by DNS service tier |
-| `rr zone get <id>` | Get zone with records |
+| `rr zone get <id\|domain>` | Get zone with records (ID or domain name) |
 | `rr zone get --domain <domain>` | Get zone directly from a domain |
-| `rr zone record add <zoneID>` | Add DNS record |
-| `rr zone sync <id> --file records.yaml` | Sync from YAML |
+| `rr zone record add <id\|domain>` | Add DNS record (ID or domain name) |
+| `rr zone record update <id\|domain>` | Update a DNS record |
+| `rr zone record delete <id\|domain>` | Delete a DNS record |
+| `rr zone sync <id\|domain> --file records.yaml` | Sync from YAML |
+
+**Zone arguments accept a numeric zone ID _or_ a domain name** — `rr zone get`, `zone update`, `zone delete`, `zone sync`, and all `zone record` subcommands resolve a domain to its zone automatically. No need to look up the numeric ID first.
 
 ### Other
 | Command | Description |
@@ -147,11 +151,14 @@ rr contact create myhandle \
 
 ### DNS Zone Management
 ```bash
-ZONE_ID=$(rr zone get --domain example.com --json | jq -r '.id')
-rr zone record add $ZONE_ID --type A --name www --content 1.2.3.4 --ttl 3600
+# Address the zone by domain name directly — no ID lookup needed:
+rr zone record add example.com --type A --name www --content 1.2.3.4 --ttl 3600
+rr zone record update example.com --type TXT --name @ \
+  --content "v=spf1 include:_spf.example.net ~all" \
+  --old-content "v=spf1 ~all"
+rr zone get example.com --json | jq -r '.records[]'
 ```
 
-When you already know the domain, prefer `rr zone get --domain <domain>`.
 Use `rr zone list --name`, `--managed`, `--unmanaged`, or `--service` when you need discovery or narrowing.
 
 ### Monitor Expiring Domains

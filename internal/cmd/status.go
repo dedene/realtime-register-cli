@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/dedene/realtime-register-cli/internal/api"
@@ -29,38 +30,55 @@ func (c *StatusCmd) Run(flags *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 
-	domains, err := client.ListDomains(ctx, api.DomainListOptions{
+	// Each metric is fetched independently so a single failing call degrades that
+	// metric to "n/a" instead of failing the whole overview.
+	var firstErr error
+	note := func(err error) {
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	totalDomains := -1
+	if resp, err := client.ListDomains(ctx, api.DomainListOptions{
 		ListOptions: api.ListOptions{Limit: 1},
-	})
-	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+	}); err != nil {
+		note(err)
+	} else {
+		totalDomains = resp.Pagination.Total
 	}
 
-	expiring, err := client.ListDomains(ctx, api.DomainListOptions{
-		ListOptions:    api.ListOptions{Limit: 1},
-		ExpiringWithin: 30,
-	})
-	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+	expiringDomains := -1
+	if domains, _, err := client.ListExpiringDomains(ctx, 30, time.Now()); err != nil {
+		note(err)
+	} else {
+		expiringDomains = len(domains)
 	}
 
-	processes, err := client.ListProcesses(ctx, api.ProcessListOptions{
+	pendingProcesses := -1
+	if resp, err := client.ListProcesses(ctx, api.ProcessListOptions{
 		ListOptions: api.ListOptions{Limit: 1},
-		Status:      "pending",
-	})
-	if err != nil {
-		return &ExitError{Code: CodeAPI, Err: err}
+		Statuses:    api.NonTerminalProcessStatuses,
+	}); err != nil {
+		note(err)
+	} else {
+		pendingProcesses = resp.Pagination.Total
 	}
-
-	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	status := map[string]any{
 		"customer":         cfg.Customer,
-		"totalDomains":     domains.Pagination.Total,
-		"expiringDomains":  expiring.Pagination.Total,
-		"pendingProcesses": processes.Pagination.Total,
+		"totalDomains":     nullableInt(totalDomains),
+		"expiringDomains":  nullableInt(expiringDomains),
+		"pendingProcesses": nullableInt(pendingProcesses),
 		"timestamp":        time.Now().UTC().Format(time.RFC3339),
 	}
+
+	// Warn on stderr regardless of output mode so it never pollutes --json stdout.
+	if firstErr != nil {
+		fmt.Fprintf(os.Stderr, "warning: some metrics unavailable: %v\n", firstErr)
+	}
+
+	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
 
 	if flags.JSON {
 		return f.Output(status, nil, nil)
@@ -68,10 +86,26 @@ func (c *StatusCmd) Run(flags *RootFlags) error {
 
 	kvPairs := [][2]string{
 		{"Customer", cfg.Customer},
-		{"Total Domains", fmt.Sprintf("%d", domains.Pagination.Total)},
-		{"Expiring (30d)", fmt.Sprintf("%d", expiring.Pagination.Total)},
-		{"Pending Processes", fmt.Sprintf("%d", processes.Pagination.Total)},
+		{"Total Domains", metricValue(totalDomains)},
+		{"Expiring (30d)", metricValue(expiringDomains)},
+		{"Pending Processes", metricValue(pendingProcesses)},
 	}
 
 	return f.OutputSingle(status, kvPairs)
+}
+
+// metricValue renders a metric, showing "n/a" for the -1 sentinel.
+func metricValue(n int) string {
+	if n < 0 {
+		return "n/a"
+	}
+	return strconv.Itoa(n)
+}
+
+// nullableInt returns nil for the -1 sentinel so JSON output emits null.
+func nullableInt(n int) any {
+	if n < 0 {
+		return nil
+	}
+	return n
 }

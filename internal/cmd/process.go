@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dedene/realtime-register-cli/internal/api"
 	"github.com/dedene/realtime-register-cli/internal/output"
@@ -20,7 +21,7 @@ type ProcessCmd struct {
 
 // ProcessListCmd lists processes.
 type ProcessListCmd struct {
-	Status string `help:"Filter by status (pending, running, completed, failed)"`
+	Status string `help:"Filter by status (NEW, VALIDATED, RUNNING, COMPLETED, INVALID, CANCELLED, FAILED, IN_DOUBT, SCHEDULED, SUSPENDED)"`
 	Limit  int    `help:"Max results" default:"50"`
 	Offset int    `help:"Offset for pagination"`
 }
@@ -40,7 +41,7 @@ func (c *ProcessListCmd) Run(flags *RootFlags) error {
 			Limit:  c.Limit,
 			Offset: c.Offset,
 		},
-		Status: c.Status,
+		Status: strings.ToUpper(strings.TrimSpace(c.Status)),
 	}
 
 	resp, err := client.ListProcesses(ctx, opts)

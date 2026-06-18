@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dedene/realtime-register-cli/internal/api"
 	"github.com/dedene/realtime-register-cli/internal/auth"
@@ -45,6 +46,22 @@ func (c *DomainListCmd) Run(flags *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
+	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
+
+	// The RR API has no expiryDate range filter, so --expiring-within is computed
+	// client-side by scanning domains in ascending expiryDate order.
+	if c.ExpiringWithin > 0 {
+		// Show every match — an "expiring within N" query is meant to be exhaustive,
+		// so --limit is intentionally not applied here.
+		domains, capped, err := client.ListExpiringDomains(ctx, c.ExpiringWithin, time.Now())
+		if err != nil {
+			return &ExitError{Code: CodeAPI, Err: err}
+		}
+		if capped {
+			fmt.Fprintln(os.Stderr, "note: stopped at scan safety cap; expiring results may be incomplete")
+		}
+		return renderDomains(f, domains)
+	}
 
 	opts := api.DomainListOptions{
 		ListOptions: api.ListOptions{
@@ -52,9 +69,8 @@ func (c *DomainListCmd) Run(flags *RootFlags) error {
 			Offset: c.Offset,
 			Search: c.Search,
 		},
-		Status:         c.Status,
-		ExpiringWithin: c.ExpiringWithin,
-		Order:          c.Sort,
+		Status: c.Status,
+		Order:  c.Sort,
 	}
 
 	resp, err := client.ListDomains(ctx, opts)
@@ -62,12 +78,19 @@ func (c *DomainListCmd) Run(flags *RootFlags) error {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
 
-	f := output.NewFormatter(os.Stdout, flags.JSON, flags.Plain, flags.Color == "never")
+	if err := renderDomains(f, resp.Entities); err != nil {
+		return err
+	}
+	warnIfCapped(resp.Pagination.Total, len(resp.Entities), c.Limit)
+	return nil
+}
 
+// renderDomains writes the standard domain table/JSON for a set of domains.
+func renderDomains(f *output.Formatter, domains []api.Domain) error {
 	headers := []string{"NAME", "STATUS", "EXPIRY", "AUTO-RENEW", "REGISTRANT"}
-	rows := make([][]string, 0, len(resp.Entities))
-	for i := range resp.Entities {
-		d := &resp.Entities[i]
+	rows := make([][]string, 0, len(domains))
+	for i := range domains {
+		d := &domains[i]
 		autoRenew := "no"
 		if d.AutoRenew {
 			autoRenew = "yes"
@@ -80,8 +103,15 @@ func (c *DomainListCmd) Run(flags *RootFlags) error {
 			d.Registrant,
 		})
 	}
+	return f.Output(domains, headers, rows)
+}
 
-	return f.Output(resp.Entities, headers, rows)
+// warnIfCapped prints a stderr hint when a list response was truncated by --limit, so a
+// downstream filter reading stdout does not silently miss entries beyond the page.
+func warnIfCapped(total, shown, limit int) {
+	if limit > 0 && shown >= limit && total > shown {
+		fmt.Fprintf(os.Stderr, "showing %d of %d — narrow with a filter or use --limit/--offset\n", shown, total)
+	}
 }
 
 // DomainGetCmd gets a single domain.

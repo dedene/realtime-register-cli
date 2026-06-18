@@ -41,8 +41,9 @@ func (o ContactListOptions) QueryParams() string {
 	if o.Offset > 0 {
 		v.Set("offset", fmt.Sprintf("%d", o.Offset))
 	}
+	// The RR list API rejects "search"; the generic full-text param is "q".
 	if o.Search != "" {
-		v.Set("search", o.Search)
+		v.Set("q", o.Search)
 	}
 	if len(v) == 0 {
 		return ""

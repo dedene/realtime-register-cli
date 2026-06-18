@@ -13,10 +13,17 @@ import (
 // DELETE /v2/processes/{id}  → CancelProcess
 // POST   /v2/processes/{id}/resend → ResendProcess
 
+// NonTerminalProcessStatuses are the process states still in flight (not yet finished).
+// The RR API has no "pending" status; these are the valid in-progress values.
+var NonTerminalProcessStatuses = []string{"NEW", "VALIDATED", "RUNNING", "SCHEDULED", "IN_DOUBT", "SUSPENDED"}
+
 // ProcessListOptions for filtering processes.
 type ProcessListOptions struct {
 	ListOptions
 	Status string
+	// Statuses matches any of several statuses (RR encodes this as a repeated
+	// "status" query parameter). Takes precedence over Status when set.
+	Statuses []string
 }
 
 // QueryParams builds a URL query string from process list options.
@@ -28,7 +35,12 @@ func (o ProcessListOptions) QueryParams() string {
 	if o.Offset > 0 {
 		v.Set("offset", fmt.Sprintf("%d", o.Offset))
 	}
-	if o.Status != "" {
+	switch {
+	case len(o.Statuses) > 0:
+		for _, s := range o.Statuses {
+			v.Add("status", s)
+		}
+	case o.Status != "":
 		v.Set("status", o.Status)
 	}
 	if len(v) == 0 {

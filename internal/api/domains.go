@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"time"
 )
 
 // Domain API endpoints per SPEC.md Appendix A:
@@ -61,9 +62,8 @@ type TransferRequest struct {
 // DomainListOptions extends ListOptions for domain-specific filters.
 type DomainListOptions struct {
 	ListOptions
-	Status         string
-	ExpiringWithin int
-	Order          string
+	Status string
+	Order  string
 }
 
 // QueryParams builds a URL query string from domain list options.
@@ -75,14 +75,12 @@ func (o DomainListOptions) QueryParams() string {
 	if o.Offset > 0 {
 		v.Set("offset", fmt.Sprintf("%d", o.Offset))
 	}
+	// The RR list API rejects "search"; the generic full-text param is "q".
 	if o.Search != "" {
-		v.Set("search", o.Search)
+		v.Set("q", o.Search)
 	}
 	if o.Status != "" {
 		v.Set("status", o.Status)
-	}
-	if o.ExpiringWithin > 0 {
-		v.Set("expiringWithin", fmt.Sprintf("%d", o.ExpiringWithin))
 	}
 	if o.Order != "" {
 		v.Set("order", o.Order)
@@ -100,6 +98,53 @@ func (c *Client) ListDomains(ctx context.Context, opts DomainListOptions) (*List
 		return nil, err
 	}
 	return &resp, nil
+}
+
+const (
+	expiryPageSize  = 100
+	expiryScanLimit = 2000
+)
+
+// ListExpiringDomains returns domains whose expiry date falls within [now, now+days],
+// sorted soonest-first.
+//
+// The RR list API only supports equality filters on fields (there is no expiryDate
+// range/operator), so this scans domains in ascending expiryDate order and stops once it
+// passes the cutoff. Already-expired domains are skipped. The bool reports whether the scan
+// hit its safety cap (expiryScanLimit) before reaching the cutoff, meaning results may be
+// incomplete for very large accounts.
+func (c *Client) ListExpiringDomains(ctx context.Context, days int, now time.Time) ([]Domain, bool, error) {
+	cutoff := now.AddDate(0, 0, days)
+	expiring := make([]Domain, 0) // non-nil so empty results render as [] not null
+
+	for offset := 0; offset < expiryScanLimit; offset += expiryPageSize {
+		resp, err := c.ListDomains(ctx, DomainListOptions{
+			ListOptions: ListOptions{Limit: expiryPageSize, Offset: offset},
+			Order:       "expiryDate",
+		})
+		if err != nil {
+			return nil, false, err
+		}
+
+		for i := range resp.Entities {
+			d := resp.Entities[i]
+			switch {
+			case d.ExpiryDate.After(cutoff):
+				// Ascending order: everything after this is also beyond the cutoff.
+				return expiring, false, nil
+			case d.ExpiryDate.Before(now):
+				continue
+			default:
+				expiring = append(expiring, d)
+			}
+		}
+
+		if len(resp.Entities) < expiryPageSize {
+			return expiring, false, nil
+		}
+	}
+
+	return expiring, true, nil
 }
 
 // GetDomain returns a single domain.
