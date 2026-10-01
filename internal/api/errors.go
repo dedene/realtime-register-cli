@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -61,6 +62,16 @@ func (e *ValidationError) Error() string {
 // NewAPIError parses a JSON error response body and returns the appropriate typed error.
 func NewAPIError(statusCode int, body []byte) error {
 	msg, details := parseAPIErrorBody(body)
+	if !json.Valid(body) {
+		// Gateway/router errors (e.g. an unknown path) come back as HTML, not JSON.
+		// The status text says more than "unknown error", and the markup is just noise.
+		if text := http.StatusText(statusCode); text != "" {
+			msg = text
+		}
+		if strings.HasPrefix(strings.TrimSpace(string(body)), "<") {
+			details = ""
+		}
+	}
 
 	base := APIError{
 		StatusCode: statusCode,
