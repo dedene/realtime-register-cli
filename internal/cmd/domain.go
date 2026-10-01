@@ -154,7 +154,7 @@ func (c *DomainGetCmd) Run(flags *RootFlags) error {
 // DomainCheckCmd checks domain availability.
 type DomainCheckCmd struct {
 	Domain string   `arg:"" help:"Domain name to check (use just name with --tlds)"`
-	TLDs   []string `help:"Check multiple TLDs (provide name without TLD)" short:"t"`
+	TLDs   []string `help:"Check multiple TLDs (provide name without TLD)" short:"t" name:"tlds" aliases:"tl-ds"`
 }
 
 func (c *DomainCheckCmd) Run(flags *RootFlags) error {
@@ -205,7 +205,7 @@ func (c *DomainCheckCmd) Run(flags *RootFlags) error {
 			}
 			price := ""
 			if r.Price > 0 {
-				price = fmt.Sprintf("%.2f", r.Price)
+				price = strings.TrimSpace(fmt.Sprintf("%.2f %s", r.Price, r.Currency))
 			}
 			rows = append(rows, []string{r.Domain, avail, price})
 		}
@@ -218,7 +218,7 @@ func (c *DomainCheckCmd) Run(flags *RootFlags) error {
 	}
 
 	// Fetch pricing if available and customer configured
-	var currency string
+	perYear := false
 	var noCustomer bool
 	if result.Available && result.Price == 0 {
 		cfg, _ := config.ReadConfig()
@@ -230,7 +230,8 @@ func (c *DomainCheckCmd) Run(flags *RootFlags) error {
 				if pricelist, err := client.GetPricelist(ctx, cfg.Customer); err == nil {
 					if cents, cur, ok := pricelist.GetTLDPrice(tld); ok {
 						result.Price = float64(cents) / 100
-						currency = cur
+						result.Currency = cur
+						perYear = true
 					} else if flags.Verbose {
 						// Show first few products to debug naming
 						fmt.Fprintf(os.Stderr, "debug: TLD %q not found in pricelist, sample products:\n", tld)
@@ -263,10 +264,12 @@ func (c *DomainCheckCmd) Run(flags *RootFlags) error {
 	}
 	if result.Price > 0 {
 		priceStr := fmt.Sprintf("%.2f", result.Price)
-		if currency != "" {
-			priceStr += " " + currency
+		if result.Currency != "" {
+			priceStr += " " + result.Currency
 		}
-		priceStr += "/year"
+		if perYear {
+			priceStr += "/year"
+		}
 		kvPairs = append(kvPairs, [2]string{"Price", priceStr})
 	} else if noCustomer && result.Available {
 		kvPairs = append(kvPairs, [2]string{"Price", "(set customer to show pricing)"})
@@ -332,6 +335,11 @@ type DomainRegisterCmd struct {
 func (c *DomainRegisterCmd) Run(flags *RootFlags) error {
 	ctx := context.Background()
 
+	months, err := periodMonths(c.Period)
+	if err != nil {
+		return err
+	}
+
 	apiKey, err := getAPIKey()
 	if err != nil {
 		return err
@@ -349,7 +357,7 @@ func (c *DomainRegisterCmd) Run(flags *RootFlags) error {
 
 	client := api.NewClient(apiKey)
 	req := api.RegisterRequest{
-		Period:       c.Period,
+		Period:       months,
 		Registrant:   c.Registrant,
 		Nameservers:  c.NS,
 		AutoRenew:    &c.AutoRenew,
@@ -444,6 +452,11 @@ type DomainRenewCmd struct {
 func (c *DomainRenewCmd) Run(flags *RootFlags) error {
 	ctx := context.Background()
 
+	months, err := periodMonths(c.Period)
+	if err != nil {
+		return err
+	}
+
 	apiKey, err := getAPIKey()
 	if err != nil {
 		return err
@@ -460,7 +473,7 @@ func (c *DomainRenewCmd) Run(flags *RootFlags) error {
 	}
 
 	client := api.NewClient(apiKey)
-	process, err := client.RenewDomain(ctx, c.Domain, c.Period)
+	process, err := client.RenewDomain(ctx, c.Domain, months)
 	if err != nil {
 		return &ExitError{Code: CodeAPI, Err: err}
 	}
@@ -552,6 +565,17 @@ func (c *DomainTransferStatusCmd) Run(flags *RootFlags) error {
 	}
 
 	return f.OutputSingle(domain, kvPairs)
+}
+
+// maxPeriodYears is the longest term the RR API accepts (renew allows up to 120 months).
+const maxPeriodYears = 10
+
+// periodMonths converts a --period given in years to the months the RR API expects.
+func periodMonths(years int) (int, error) {
+	if years < 1 || years > maxPeriodYears {
+		return 0, &ExitError{Code: CodeUsage, Err: fmt.Errorf("--period must be between 1 and %d years, got %d", maxPeriodYears, years)}
+	}
+	return years * 12, nil
 }
 
 // getAPIKey retrieves the API key from env or keyring.
