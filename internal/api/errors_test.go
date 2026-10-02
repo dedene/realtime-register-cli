@@ -139,3 +139,34 @@ func TestNewAPIError_SortsRecordIndexesNumerically(t *testing.T) {
 		t.Fatalf("Details not numerically sorted: %q", apiErr.Details)
 	}
 }
+
+func TestNewAPIError_UsesStatusTextForHTMLBody(t *testing.T) {
+	t.Parallel()
+
+	err := NewAPIError(404, []byte("<!doctype html>\n<html><body><h1>Not Found</h1></body></html>\n"))
+
+	var nfErr *NotFoundError
+	if !errors.As(err, &nfErr) {
+		t.Fatalf("expected *NotFoundError, got %T", err)
+	}
+	if got, want := nfErr.Message, "Not Found"; got != want {
+		t.Fatalf("Message = %q, want %q", got, want)
+	}
+	if nfErr.Details != "" {
+		t.Fatalf("Details = %q, want empty for HTML body", nfErr.Details)
+	}
+}
+
+func TestNewAPIError_KeepsPlainTextBodyAsDetails(t *testing.T) {
+	t.Parallel()
+
+	err := NewAPIError(502, []byte("upstream timed out"))
+
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T", err)
+	}
+	if apiErr.Message != "Bad Gateway" || apiErr.Details != "upstream timed out" {
+		t.Fatalf("got Message=%q Details=%q", apiErr.Message, apiErr.Details)
+	}
+}

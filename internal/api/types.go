@@ -132,16 +132,6 @@ type Process struct {
 	Message      string    `json:"message,omitempty"`
 }
 
-// TLDInfo represents top-level domain metadata.
-type TLDInfo struct {
-	TLD           string  `json:"tld"`
-	PriceCreate   float64 `json:"priceCreate"`
-	PriceRenew    float64 `json:"priceRenew"`
-	PriceTransfer float64 `json:"priceTransfer"`
-	MinPeriod     int     `json:"minPeriod"`
-	MaxPeriod     int     `json:"maxPeriod"`
-}
-
 // PricelistEntry represents a price from the customer pricelist.
 type PricelistEntry struct {
 	Product  string `json:"product"`
@@ -157,9 +147,14 @@ type Pricelist struct {
 
 // GetTLDPrice finds the CREATE price for a TLD in cents, returns price and currency.
 func (p *Pricelist) GetTLDPrice(tld string) (price int, currency string, found bool) {
+	return p.TLDActionPrice(tld, "CREATE")
+}
+
+// TLDActionPrice finds the price in cents for a TLD action (CREATE, RENEW, TRANSFER, ...).
+func (p *Pricelist) TLDActionPrice(tld, action string) (price int, currency string, found bool) {
 	product := "domain_" + tld
 	for _, entry := range p.Prices {
-		if entry.Product == product && entry.Action == "CREATE" {
+		if entry.Product == product && entry.Action == action {
 			return entry.Price, entry.Currency, true
 		}
 	}
