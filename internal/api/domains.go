@@ -17,17 +17,29 @@ import (
 // POST   /v2/domains/{name}/renew → RenewDomain
 // POST   /v2/domains/{name}/transfer → TransferDomain
 
-// DomainAvailability is the response from domain check.
+// DomainAvailability is the result of a domain check.
 type DomainAvailability struct {
 	Available bool    `json:"available"`
 	Domain    string  `json:"domain"`
+	Reason    string  `json:"reason,omitempty"`
 	Premium   bool    `json:"premium,omitempty"`
-	Price     float64 `json:"price,omitempty"`
+	Price     float64 `json:"price,omitempty"` // major units (e.g. 50.00), not cents
+	Currency  string  `json:"currency,omitempty"`
+}
+
+// checkResponse is the raw /check payload. It does not echo the domain name and
+// reports premium prices in cents.
+type checkResponse struct {
+	Available bool   `json:"available"`
+	Reason    string `json:"reason"`
+	Premium   bool   `json:"premium"`
+	Price     int    `json:"price"`
+	Currency  string `json:"currency"`
 }
 
 // RegisterRequest for domain registration.
 type RegisterRequest struct {
-	Period       int      `json:"period,omitempty"`
+	Period       int      `json:"period,omitempty"` // months, not years
 	Registrant   string   `json:"registrant"`
 	Admin        string   `json:"admin,omitempty"`
 	Tech         string   `json:"tech,omitempty"`
@@ -49,7 +61,7 @@ type UpdateRequest struct {
 
 // RenewRequest for domain renewal.
 type RenewRequest struct {
-	Period int `json:"period"`
+	Period int `json:"period"` // months, not years
 }
 
 // TransferRequest for domain transfer.
@@ -158,11 +170,18 @@ func (c *Client) GetDomain(ctx context.Context, name string) (*Domain, error) {
 
 // CheckDomain checks availability.
 func (c *Client) CheckDomain(ctx context.Context, name string) (*DomainAvailability, error) {
-	var result DomainAvailability
-	if err := c.Get(ctx, "/domains/"+url.PathEscape(name)+"/check", &result); err != nil {
+	var resp checkResponse
+	if err := c.Get(ctx, "/domains/"+url.PathEscape(name)+"/check", &resp); err != nil {
 		return nil, err
 	}
-	return &result, nil
+	return &DomainAvailability{
+		Available: resp.Available,
+		Domain:    name,
+		Reason:    resp.Reason,
+		Premium:   resp.Premium,
+		Price:     float64(resp.Price) / 100,
+		Currency:  resp.Currency,
+	}, nil
 }
 
 // RegisterDomain registers a new domain.
@@ -184,10 +203,10 @@ func (c *Client) DeleteDomain(ctx context.Context, name string) error {
 	return c.Delete(ctx, "/domains/"+url.PathEscape(name))
 }
 
-// RenewDomain renews a domain.
-func (c *Client) RenewDomain(ctx context.Context, name string, period int) (*Process, error) {
+// RenewDomain renews a domain for periodMonths months.
+func (c *Client) RenewDomain(ctx context.Context, name string, periodMonths int) (*Process, error) {
 	var process Process
-	req := RenewRequest{Period: period}
+	req := RenewRequest{Period: periodMonths}
 	if err := c.Post(ctx, "/domains/"+url.PathEscape(name)+"/renew", req, &process); err != nil {
 		return nil, err
 	}

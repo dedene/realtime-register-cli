@@ -102,3 +102,56 @@ func TestListExpiringDomains(t *testing.T) {
 		t.Fatalf("ListExpiringDomains() = %v, want [soon1.com soon2.com]", []string{got[0].DomainName, got[1].DomainName})
 	}
 }
+
+func TestCheckDomain_FillsDomainAndConvertsPremiumPrice(t *testing.T) {
+	t.Parallel()
+
+	mock := NewMockServer(t)
+	defer mock.Close()
+	// Real /check payloads carry no domain name and report premium prices in cents.
+	mock.OnJSON(http.MethodGet, "/domains/nimbu.link/check", 200,
+		map[string]any{"available": true, "premium": true, "price": 5000, "currency": "USD"})
+	mock.OnJSON(http.MethodGet, "/domains/nimbu.dev/check", 200,
+		map[string]any{"available": false, "premium": false})
+
+	client := mock.Client()
+
+	premium, err := client.CheckDomain(context.Background(), "nimbu.link")
+	if err != nil {
+		t.Fatalf("CheckDomain() error = %v", err)
+	}
+	want := DomainAvailability{Available: true, Domain: "nimbu.link", Premium: true, Price: 50, Currency: "USD"}
+	if *premium != want {
+		t.Errorf("CheckDomain(nimbu.link) = %+v, want %+v", *premium, want)
+	}
+
+	taken, err := client.CheckDomain(context.Background(), "nimbu.dev")
+	if err != nil {
+		t.Fatalf("CheckDomain() error = %v", err)
+	}
+	if taken.Domain != "nimbu.dev" || taken.Available || taken.Price != 0 {
+		t.Errorf("CheckDomain(nimbu.dev) = %+v, want domain filled, unavailable, no price", *taken)
+	}
+}
+
+func TestRenewDomain_SendsPeriodVerbatim(t *testing.T) {
+	t.Parallel()
+
+	mock := NewMockServer(t)
+	defer mock.Close()
+	mock.On(http.MethodPost, "/domains/nimbu.dev/renew", func(w http.ResponseWriter, r *http.Request) {
+		var body RenewRequest
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body.Period != 24 {
+			t.Errorf("period = %d, want 24 (months)", body.Period)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(Process{ID: 1, Status: "COMPLETED"})
+	})
+
+	if _, err := mock.Client().RenewDomain(context.Background(), "nimbu.dev", 24); err != nil {
+		t.Fatalf("RenewDomain() error = %v", err)
+	}
+}
